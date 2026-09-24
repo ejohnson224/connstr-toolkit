@@ -1,9 +1,11 @@
 # connstr-toolkit
 
 A small TypeScript library (and thin CLI) for parsing, validating, and
-building URI-style database connection strings: `postgres://`, `mysql://`,
-`mongodb://`, `redis://`, and anything else shaped like
-`scheme://user:pass@host:port/database?param=value`.
+building database connection strings, in two shapes: URI-style
+(`postgres://`, `mysql://`, `mongodb://`, `redis://`, and anything else
+shaped like `scheme://user:pass@host:port/database?param=value`) and
+ODBC-style (`Server=host;Port=5432;Database=db;Uid=user;Pwd=pass;`, used by
+SQL Server and other ODBC drivers).
 
 ## The problem
 
@@ -66,6 +68,40 @@ parseConnectionString('mysql://db:99999/app', { lenient: true }).hosts;
 // -> [{ host: "db" }]   (port silently dropped instead of thrown)
 ```
 
+### ODBC-style strings
+
+`parseOdbcConnectionString` and `formatOdbcConnectionString` handle the
+`Key=Value;Key2=Value2` shape used by SQL Server and other ODBC drivers.
+Keys are matched case-insensitively against the common aliases each concept
+goes by (`Server`/`Host`/`Data Source`, `Uid`/`User`/`User Id`,
+`Pwd`/`Password`, `Database`/`Initial Catalog`); anything else - `Driver`,
+timeouts, TLS options - is kept as-is in `params`.
+
+```ts
+import { parseOdbcConnectionString } from 'connstr-toolkit';
+
+const cs = parseOdbcConnectionString(
+  'Driver={PostgreSQL};Server=db1;Port=5433;Database=orders;Uid=app;Pwd=s3cr3t;',
+);
+
+// cs.scheme    -> "odbc"
+// cs.hosts     -> [{ host: "db1", port: 5433 }]
+// cs.database  -> "orders"
+// cs.username  -> "app"
+// cs.password  -> "s3cr3t"
+// cs.params    -> { driver: "PostgreSQL" }
+```
+
+A value wrapped in `{...}` may contain `;` and `=`; a literal `}` inside one
+is written as `}}`, per the ODBC convention. The same strict/lenient rules
+apply: a pair with no `=`, a duplicate key, an out-of-range port, and a
+missing host all throw under strict mode and are tolerated under
+`{ lenient: true }`.
+
+`formatOdbcConnectionString` serializes back to the same form, and throws if
+`hosts` has more than one entry - ODBC connection strings address a single
+server, unlike the comma-separated host lists the URI-style format allows.
+
 ## CLI usage
 
 ```
@@ -88,6 +124,9 @@ retry with --lenient to relax validation
 
 $ connstr "mysql://db:99999/app" --lenient --compact
 {"scheme":"mysql","hosts":[{"host":"db"}],"database":"app","params":{}}
+
+$ connstr --odbc "Server=db1;Port=5433;Database=orders;Uid=app;Pwd=s3cr3t;" --compact
+{"scheme":"odbc","username":"app","password":"s3cr3t","hosts":[{"host":"db1","port":5433}],"database":"orders","params":{}}
 ```
 
 ## What "strict" checks
@@ -107,9 +146,10 @@ whole parse failing.
 
 ## Status
 
-This is a first pass covering the common URI-style shape. It does not yet
-handle ODBC-style `Key=Value;Key2=Value2` strings (used by SQL Server and
-some ODBC drivers) - see the roadmap.
+This covers the common URI-style shape and ODBC-style `Key=Value;Key2=Value2`
+strings. It does not yet have a `format`/`build` CLI subcommand for
+constructing a connection string from JSON, or scheme-specific default port
+lookup.
 
 ## Install
 

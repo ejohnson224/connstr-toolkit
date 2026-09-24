@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 import { parseConnectionString, ConnectionStringError } from './parser.js';
+import { parseOdbcConnectionString } from './odbc.js';
 
 function printUsage(): void {
   process.stderr.write(
     [
-      'usage: connstr <connection-string> [--lenient] [--compact]',
+      'usage: connstr <connection-string> [--odbc] [--lenient] [--compact]',
       '',
+      '  --odbc     parse ODBC-style "key=value;key2=value2" input instead of a URI',
       '  --lenient  relax validation instead of throwing on messy input',
       '  --compact  print single-line JSON instead of pretty-printed JSON',
       '',
-      'example:',
+      'examples:',
       '  connstr "postgres://app:secret@db1,db2:5433/orders?sslmode=require"',
+      '  connstr --odbc "Server=db1;Port=5433;Database=orders;Uid=app;Pwd=secret;"',
     ].join('\n') + '\n',
   );
 }
@@ -19,6 +22,7 @@ function main(argv: string[]): number {
   const args = argv.slice(2);
   let lenient = false;
   let compact = false;
+  let odbc = false;
   const positional: string[] = [];
 
   for (const arg of args) {
@@ -26,6 +30,8 @@ function main(argv: string[]): number {
       lenient = true;
     } else if (arg === '--compact') {
       compact = true;
+    } else if (arg === '--odbc') {
+      odbc = true;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       return 0;
@@ -45,7 +51,9 @@ function main(argv: string[]): number {
   const input = positional[0]!;
 
   try {
-    const parsed = parseConnectionString(input, { lenient });
+    const parsed = odbc
+      ? parseOdbcConnectionString(input, { lenient })
+      : parseConnectionString(input, { lenient });
     process.stdout.write(JSON.stringify(parsed, null, compact ? 0 : 2) + '\n');
     return 0;
   } catch (err) {
