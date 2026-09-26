@@ -102,6 +102,30 @@ missing host all throw under strict mode and are tolerated under
 `hosts` has more than one entry - ODBC connection strings address a single
 server, unlike the comma-separated host lists the URI-style format allows.
 
+### Building a connection string from JSON
+
+`buildConnectionString` is the inverse of parsing: it takes a plain object
+shaped like `ParsedConnectionString` (only `scheme` is required - `hosts`,
+`database`, and `params` default to empty) and returns the connection
+string it describes. It validates the shape the same way `parseConnectionString`
+validates its input, throwing a `ConnectionStringError` with code
+`INVALID_BUILD_INPUT` on a bad shape rather than producing a broken string.
+
+```ts
+import { buildConnectionString } from 'connstr-toolkit';
+
+buildConnectionString({
+  scheme: 'postgres',
+  hosts: [{ host: 'db1' }, { host: 'db2', port: 5433 }],
+  database: 'orders',
+  params: { sslmode: 'require' },
+});
+// -> "postgres://db1,db2:5433/orders?sslmode=require"
+
+buildConnectionString({ scheme: 'odbc', hosts: [{ host: 'db1' }] }, { odbc: true });
+// -> "Server=db1;"
+```
+
 ## CLI usage
 
 ```
@@ -129,6 +153,27 @@ $ connstr --odbc "Server=db1;Port=5433;Database=orders;Uid=app;Pwd=s3cr3t;" --co
 {"scheme":"odbc","username":"app","password":"s3cr3t","hosts":[{"host":"db1","port":5433}],"database":"orders","params":{}}
 ```
 
+### Building a connection string from JSON
+
+`connstr format` goes the other direction: given a JSON object shaped like the
+output above, it prints the connection string it describes. The JSON can be
+passed as an argument or piped in on stdin; `hosts`, `database`, and `params`
+are all optional.
+
+```
+$ connstr format '{"scheme":"postgres","hosts":[{"host":"db1"}],"database":"orders"}'
+postgres://db1/orders
+
+$ echo '{"scheme":"odbc","hosts":[{"host":"db1","port":5433}],"username":"app","password":"s3cr3t"}' \
+    | connstr format --odbc
+Server=db1;Port=5433;Uid=app;Pwd=s3cr3t;
+```
+
+`format` validates the JSON the same way parsing validates a string: a
+missing `scheme`, a host without a `host` field, an out-of-range port, or a
+non-string `params` value all fail with an `INVALID_BUILD_INPUT` error
+instead of silently producing a broken connection string.
+
 ## What "strict" checks
 
 - scheme is present and looks like `[a-zA-Z][a-zA-Z0-9+.-]*`
@@ -147,9 +192,9 @@ whole parse failing.
 ## Status
 
 This covers the common URI-style shape and ODBC-style `Key=Value;Key2=Value2`
-strings. It does not yet have a `format`/`build` CLI subcommand for
-constructing a connection string from JSON, or scheme-specific default port
-lookup.
+strings, parsing in both directions and building a string back up from JSON.
+It does not yet have scheme-specific default port lookup (e.g. knowing that
+`postgres` means 5432 when no port is given).
 
 ## Install
 
